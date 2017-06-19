@@ -22,6 +22,13 @@
 #ifndef PHP_PAM_H
 #define PHP_PAM_H
 
+#if PHP_MAJOR_VERSION < 7
+#define _ZVAL_STRING(str, len) ZVAL_STRING(str, len, 0)
+#define _RETURN_STRING(str) RETURN_STRING(str, 0)
+#else
+#define _ZVAL_STRING(str, len) ZVAL_STRING(str, len)
+#define _RETURN_STRING(str) RETURN_STRING(str)
+#endif
 extern zend_module_entry pam_module_entry;
 #define phpext_pam_ptr &pam_module_entry
 

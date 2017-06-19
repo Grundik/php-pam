@@ -111,6 +111,47 @@ PHP_MINFO_FUNCTION(pam)
 }
 /* }}} */
 
+static zend_always_inline zval* zend_compat_hash_find(HashTable *ht, char *key, size_t len) {
+#if PHP_MAJOR_VERSION < 7
+	zval **tmp;
+	if (zend_hash_find(ht, key, len, (void **) &tmp) == FAILURE) {
+		return NULL;
+	}
+	return *tmp;
+#else
+	zval *result;
+	zend_string *key_str = zend_string_init(key, len-1, 0);
+	result = zend_hash_find(ht, key_str);
+	zend_string_release(key_str);
+	return result;
+#endif
+}
+
+static zend_always_inline zval* zend_compat_hash_index_find(HashTable *ht, zend_ulong idx)
+{
+#if PHP_MAJOR_VERSION < 7
+    zval **tmp, *result;
+
+    if (zend_hash_index_find(ht, idx, (void **) &tmp) == FAILURE) {
+        return;
+    }
+
+    result = *tmp;
+    return result;
+#else
+    return zend_hash_index_find(ht, idx);
+#endif
+}
+
+static zend_always_inline void zend_compat_hash_update_ptr_const(HashTable *ht, const char *key, size_t len, void *ptr, size_t ptr_size)
+{
+#if PHP_MAJOR_VERSION < 7
+    zend_hash_update(ht, key, len+1, ptr, ptr_size, NULL);
+#else
+    zend_hash_str_update_ptr(ht, key, len, ptr);
+#endif
+}
+
 /*
  * auth_pam_talker: supply authentication information to PAM when asked
  *
@@ -228,7 +269,7 @@ PHP_FUNCTION(pam_auth)
 {
 	char *username, *password;
 	int username_len, password_len;
-	zval *status = NULL, **server, **remote_addr;
+	zval *status = NULL, *server = NULL, *remote_addr = NULL;
 	zend_bool checkacctmgmt = 1;
 
 	pam_auth_t userinfo = {NULL, NULL};
@@ -248,14 +289,16 @@ PHP_FUNCTION(pam_auth)
 		if (status) {
 			spprintf(&error_msg, 0, "%s (in %s)", (char *) pam_strerror(pamh, result), "pam_start");
 			zval_dtor(status);
-			ZVAL_STRING(status, error_msg, 0);
+			ZVAL_STRING(status, error_msg);
 		}
 		RETURN_FALSE;
 	}
 
-	if (zend_hash_find(&EG(symbol_table), "_SERVER", sizeof("_SERVER"), (void **)&server) == SUCCESS && Z_TYPE_PP(server) == IS_ARRAY) {
-		if (zend_hash_find(Z_ARRVAL_PP(server), "REMOTE_ADDR", sizeof("REMOTE_ADDR"), (void **)&remote_addr) == SUCCESS && Z_TYPE_PP(remote_addr) == IS_STRING) {
-			pam_set_item(pamh, PAM_RHOST, Z_STRVAL_PP(remote_addr));
+  server = zend_compat_hash_find(&EG(symbol_table), "_SERVER", sizeof("_SERVER"));
+	if (server != NULL && Z_TYPE_P(server) == IS_ARRAY) {
+    remote_addr = zend_compat_hash_find(Z_ARRVAL_P(server), "REMOTE_ADDR", sizeof("REMOTE_ADDR"));
+		if (remote_addr != NULL && Z_TYPE_P(remote_addr) == IS_STRING) {
+			pam_set_item(pamh, PAM_RHOST, Z_STRVAL_P(remote_addr));
 		}
 	}
 
@@ -263,7 +306,7 @@ PHP_FUNCTION(pam_auth)
 		if (status) {
 			spprintf(&error_msg, 0, "%s (in %s)", (char *) pam_strerror(pamh, result), "pam_authenticate");
 			zval_dtor(status);
-			ZVAL_STRING(status, error_msg, 0);
+			ZVAL_STRING(status, error_msg);
 		}
 		pam_end(pamh, PAM_SUCCESS);
 		RETURN_FALSE;
@@ -274,7 +317,7 @@ PHP_FUNCTION(pam_auth)
 			if (status) {
 				spprintf(&error_msg, 0, "%s (in %s)", (char *) pam_strerror(pamh, result), "pam_acct_mgmt");
 				zval_dtor(status);
-				ZVAL_STRING(status, error_msg, 0);
+				ZVAL_STRING(status, error_msg);
 			}
 			pam_end(pamh, PAM_SUCCESS);
 			RETURN_FALSE;
@@ -312,7 +355,7 @@ PHP_FUNCTION(pam_chpass)
 		if (status) {
 			spprintf(&error_msg, 0, "%s (in %s)", (char *) pam_strerror(pamh, result), "pam_start");
 			zval_dtor(status);
-			ZVAL_STRING(status, error_msg, 0);
+			ZVAL_STRING(status, error_msg);
 		}
 		RETURN_FALSE;
 	}
@@ -321,7 +364,7 @@ PHP_FUNCTION(pam_chpass)
 		if (status) {
 			spprintf(&error_msg, 0, "%s (in %s)", (char *) pam_strerror(pamh, result), "pam_authenticate");
 			zval_dtor(status);
-			ZVAL_STRING(status, error_msg, 0);
+			ZVAL_STRING(status, error_msg);
 		}
 		pam_end(pamh, PAM_SUCCESS);
 		RETURN_FALSE;
@@ -331,7 +374,7 @@ PHP_FUNCTION(pam_chpass)
 		if (status) {
 			spprintf(&error_msg, 0, "%s (in %s)", (char *) pam_strerror(pamh, result), "pam_chauthtok");
 			zval_dtor(status);
-			ZVAL_STRING(status, error_msg, 0);
+			ZVAL_STRING(status, error_msg);
 		}
 		pam_end(pamh, PAM_SUCCESS);
 		RETURN_FALSE;
